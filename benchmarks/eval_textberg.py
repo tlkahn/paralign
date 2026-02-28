@@ -343,6 +343,11 @@ def run_bertalign(
         script = textwrap.dedent(f"""\
             import json
             import sys
+            import os
+            # Redirect stdout to stderr so bertalign's print() calls don't
+            # pollute our JSON output.
+            real_stdout = os.dup(1)
+            os.dup2(2, 1)
             sys.path.insert(0, {str(bertalign_dir)!r})
             from bertalign import Bertalign
             src_text = {src_text!r}
@@ -352,6 +357,8 @@ def run_bertalign(
             result = []
             for src_ids, tgt_ids in aligner.result:
                 result.append([list(src_ids), list(tgt_ids)])
+            # Restore real stdout for JSON output only.
+            os.dup2(real_stdout, 1)
             print(json.dumps(result))
         """)
 
