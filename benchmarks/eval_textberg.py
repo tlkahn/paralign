@@ -353,7 +353,10 @@ def run_bertalign(
             aligner.align_sents()
             result = []
             for src_ids, tgt_ids in aligner.result:
-                result.append([list(src_ids), list(tgt_ids)])
+                result.append([
+                    [int(x) for x in src_ids],
+                    [int(x) for x in tgt_ids],
+                ])
             with open({result_file!r}, "w") as f:
                 json.dump(result, f)
         """)
