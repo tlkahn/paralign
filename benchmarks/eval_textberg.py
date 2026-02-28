@@ -340,14 +340,11 @@ def run_bertalign(
         src_text = "\n".join(doc.src_sents)
         tgt_text = "\n".join(doc.tgt_sents)
 
+        # Use a temp file for JSON output to avoid bertalign's stdout noise.
+        result_file = tempfile.mktemp(suffix=".json")
         script = textwrap.dedent(f"""\
             import json
             import sys
-            import os
-            # Redirect stdout to stderr so bertalign's print() calls don't
-            # pollute our JSON output.
-            real_stdout = os.dup(1)
-            os.dup2(2, 1)
             sys.path.insert(0, {str(bertalign_dir)!r})
             from bertalign import Bertalign
             src_text = {src_text!r}
@@ -357,9 +354,8 @@ def run_bertalign(
             result = []
             for src_ids, tgt_ids in aligner.result:
                 result.append([list(src_ids), list(tgt_ids)])
-            # Restore real stdout for JSON output only.
-            os.dup2(real_stdout, 1)
-            print(json.dumps(result))
+            with open({result_file!r}, "w") as f:
+                json.dump(result, f)
         """)
 
         script_path: str | None = None
@@ -380,12 +376,21 @@ def run_bertalign(
             if proc.returncode != 0:
                 print(
                     f"  WARNING: bertalign failed on doc {doc.doc_id}:\n"
-                    f"    {proc.stderr[:500]}",
+                    f"    {proc.stderr[-500:]}",
                     file=sys.stderr,
                 )
                 return None
 
-            parsed = json.loads(proc.stdout.strip())
+            result_path = Path(result_file)
+            if not result_path.exists():
+                print(
+                    f"  WARNING: bertalign produced no output for doc {doc.doc_id}:\n"
+                    f"    {proc.stderr[-500:]}",
+                    file=sys.stderr,
+                )
+                return None
+
+            parsed = json.loads(result_path.read_text())
             alignment: Alignment = [
                 (tuple(src_ids), tuple(tgt_ids)) for src_ids, tgt_ids in parsed
             ]
@@ -396,6 +401,7 @@ def run_bertalign(
         finally:
             if script_path is not None:
                 Path(script_path).unlink(missing_ok=True)
+            Path(result_file).unlink(missing_ok=True)
 
     return doc_alignments
 
